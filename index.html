@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="nn">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="RunGoal hjelper deg å rekne ut målfart og lage ein enkel løpeplan.">
+  <title>RunGoal – Løp mot målet ditt</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <script src="script.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#top" aria-label="RunGoal framside">
+      <span class="brand-mark" aria-hidden="true">R</span>
+      <span>Run<span class="brand-accent">Goal</span></span>
+    </a>
+    <span class="topbar-note">Små steg. Store mål.</span>
+  </header>
+
+  <main id="top" class="page-wrap">
+    <section class="intro">
+      <div class="intro-copy">
+        <p class="eyebrow">DIN PLAN · DITT TEMPO</p>
+        <h1>Løp mot <span>målet ditt.</span></h1>
+        <p class="intro-text">Legg inn målet ditt, så reknar RunGoal ut målfarten og set opp eit forslag til treningsplan.</p>
+      </div>
+      <div class="intro-art" aria-hidden="true">
+        <div class="sun"></div>
+        <div class="track track-one"></div>
+        <div class="track track-two"></div>
+        <div class="track track-three"></div>
+        <div class="runner">↗</div>
+        <span class="art-label">KEEP MOVING</span>
+      </div>
+    </section>
+
+    <section class="workspace" aria-label="Lag treningsplan">
+      <form id="goal-form" class="panel form-panel">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">01 / SETT MÅLET</p>
+            <h2>Din løpeplan</h2>
+          </div>
+          <span class="step-number">01</span>
+        </div>
+
+        <div class="field-grid">
+          <label class="field">
+            <span>Distanse du vil springe</span>
+            <span class="input-wrap"><input id="distance" type="number" min="0.2" max="100" step="0.1" value="2.5" required><span>km</span></span>
+          </label>
+          <label class="field">
+            <span>Ønskt tid</span>
+            <span class="input-wrap"><input id="goal-time" type="number" min="1" max="600" step="0.5" value="15" required><span>min</span></span>
+          </label>
+          <label class="field">
+            <span>Veker fram til målet</span>
+            <span class="input-wrap"><input id="weeks" type="number" min="4" max="24" step="1" value="12" required><span>veker</span></span>
+          </label>
+          <label class="field">
+            <span>Du spring per veke no</span>
+            <span class="input-wrap"><input id="current-km" type="number" min="0" max="200" step="0.1" value="2" required><span>km</span></span>
+          </label>
+        </div>
+
+        <fieldset class="days-field">
+          <legend>Kor mange dagar vil du springe i veka?</legend>
+          <div class="choice-row">
+            <label class="choice"><input type="radio" name="days" value="2" checked><span>2 dagar</span></label>
+            <label class="choice"><input type="radio" name="days" value="3"><span>3 dagar</span></label>
+            <label class="choice"><input type="radio" name="days" value="4"><span>4 dagar</span></label>
+          </div>
+        </fieldset>
+
+        <button class="primary-button" type="submit">Lag treningsplan <span aria-hidden="true">→</span></button>
+        <p id="form-error" class="form-error" role="alert" aria-live="polite"></p>
+        <p class="form-hint">Du kan endre tala når som helst og lage ein ny plan.</p>
+      </form>
+
+      <section class="panel result-panel" aria-live="polite">
+        <div class="panel-heading result-heading">
+          <div>
+            <p class="eyebrow">02 / DITT MÅL</p>
+            <h2>Farten du treng</h2>
+          </div>
+          <span class="target-icon" aria-hidden="true">↗</span>
+        </div>
+        <div class="pace-card">
+          <span class="metric-label">MÅLFART · PER KILOMETER</span>
+          <div class="pace-value" id="pace-value">6:00 <small>/km</small></div>
+          <div class="pace-divider"></div>
+          <div class="speed-row">
+            <div><span id="speed-value">10,0</span><small> km/t</small></div>
+            <span class="speed-caption">Gjennomsnittsfart</span>
+          </div>
+        </div>
+        <div class="goal-summary">
+          <div><span class="summary-label">Distanse</span><strong id="summary-distance">2,5 km</strong></div>
+          <div><span class="summary-label">Tid</span><strong id="summary-time">15 min</strong></div>
+          <div><span class="summary-label">Plan</span><strong id="summary-weeks">12 veker</strong></div>
+        </div>
+        <p class="result-note"><span class="note-dot"></span>Dette er farten du må halde i gjennomsnitt for å nå tida du har valt.</p>
+      </section>
+    </section>
+
+    <section class="plan-section">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">03 / VEKE FOR VEKE</p>
+          <h2>Treningsplanen din</h2>
+          <p class="section-subtitle">Eit gradvis forslag basert på treningsmengda du har no.</p>
+        </div>
+        <button id="print-button" class="secondary-button" type="button"><span aria-hidden="true">⤓</span> Skriv ut</button>
+      </div>
+
+      <div class="plan-overview">
+        <div class="overview-mark"><span>✓</span></div>
+        <div><strong>Hugs å ta det roleg</strong><p>Du treng ikkje springe i målfart på kvar trening. Rolige turar byggjer grunnlaget.</p></div>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Veke</th><th>Økt 1</th><th>Økt 2</th><th>Økt 3 / 4</th><th>Totalt</th><th>Fokus</th></tr></thead>
+          <tbody id="plan-body">
+            <tr><td>1</td><td>0,9 km</td><td>1,1 km</td><td>–</td><td>2,0 km</td><td>Rolig start</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="table-footnote">Kilometertala er omtrentlege. Planen blir rekna ut på nytt når du endrar måla dine.</p>
+    </section>
+
+    <section class="tips-grid">
+      <article class="tip-card">
+        <span class="tip-number">A</span>
+        <h3>Rolig økt</h3>
+        <p>Spring i eit tempo der du framleis kan snakke. Målet er å byggje vanen og halde turen behageleg.</p>
+      </article>
+      <article class="tip-card">
+        <span class="tip-number">B</span>
+        <h3>Variert økt</h3>
+        <p>Når det kjennest greitt, kan du prøve korte periodar med litt høgare fart, med roleg gange eller jogg mellom.</p>
+      </article>
+      <article class="tip-card">
+        <span class="tip-number">C</span>
+        <h3>Kvile tel òg</h3>
+        <p>Ha minst éin kviledag mellom løpeturane. Ta ekstra kvile eller gjenta ei veke dersom kroppen treng det.</p>
+      </article>
+    </section>
+
+    <aside class="disclaimer"><strong>Merk:</strong> Dette er eit estimat, ikkje ein garanti for at du når målet. Kor raskt du utviklar deg, varierer. Auk treningsmengda forsiktig, og stopp eller ta pause dersom du får smerter eller kjenner deg uvanleg sliten.</aside>
+  </main>
+
+  <footer class="footer"><span class="brand footer-brand"><span class="brand-mark">R</span><span>Run<span class="brand-accent">Goal</span></span></span><span>Finn ditt tempo. Følg din eigen framgang.</span></footer>
+</body>
+</html>
