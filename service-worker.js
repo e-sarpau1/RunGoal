@@ -1,4 +1,4 @@
-const CACHE_NAME = "rungoal-v3";
+const CACHE_NAME = "rungoal-v4";
 
 const FILES_TO_CACHE = [
     "./",
