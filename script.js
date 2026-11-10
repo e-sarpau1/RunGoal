@@ -1,6 +1,6 @@
-// ======================================
-// RUNG OAL - HOVUDFUNKSJONAR
-// ======================================
+// =====================================
+// RUNG OAL - DATA OG INNSTILLINGAR
+// =====================================
 
 const DEFAULT_SETTINGS = {
     targetDistance: 2.5,
@@ -25,18 +25,37 @@ let settings = {
     ...loadData("rungoal-settings", {})
 };
 
+settings.targetDistance = Number(settings.targetDistance) || 2.5;
+settings.targetMinutes = Number(settings.targetMinutes) || 15;
+settings.goalWeeks = Number(settings.goalWeeks) || 12;
+settings.weeklyDistance = Number(settings.weeklyDistance) || 2;
+
+settings.runningDays = [1, 2, 3].includes(Number(settings.runningDays))
+    ? Number(settings.runningDays)
+    : 3;
+
+// Gjer gamle registreringar kompatible med den nye versjonen.
 let runs = loadData("rungoal-runs", []);
 
-let elapsedMs = 0;
-let startedAt = null;
-let timerInterval = null;
+if (!Array.isArray(runs)) {
+    runs = [];
+}
 
-let calendarMonth = new Date();
-calendarMonth.setDate(1);
+runs = runs.map(run => ({
+    ...run,
+    id: String(run.id || createRunId()),
+    distance: Number(run.distance),
+    durationMs: Number(run.durationMs ?? run.elapsedMs),
+    feeling: run.feeling || "normal"
+})).filter(run =>
+    Number.isFinite(run.distance) &&
+    run.distance > 0 &&
+    Number.isFinite(run.durationMs) &&
+    run.durationMs > 0 &&
+    /^\d{4}-\d{2}-\d{2}$/.test(run.date)
+);
 
-let selectedDate = getLocalDateString(new Date());
-
-const feelingLabels = {
+const FEELING_LABELS = {
     easy: "Lett og behageleg",
     normal: "Passe tung",
     hard: "Tung",
@@ -44,13 +63,26 @@ const feelingLabels = {
 };
 
 
-// ======================================
-// LAGRING OG DATOAR
-// ======================================
+// =====================================
+// HJELPEFUNKSJONAR
+// =====================================
+
+function createRunId() {
+    if (window.crypto && window.crypto.randomUUID) {
+        return window.crypto.randomUUID();
+    }
+
+    return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
 
 function saveData() {
-    localStorage.setItem("rungoal-settings", JSON.stringify(settings));
-    localStorage.setItem("rungoal-runs", JSON.stringify(runs));
+    try {
+        localStorage.setItem("rungoal-settings", JSON.stringify(settings));
+        localStorage.setItem("rungoal-runs", JSON.stringify(runs));
+    } catch (error) {
+        console.error("Kunne ikkje lagre data:", error);
+        alert("Kunne ikkje lagre data. Kontroller lagringsplassen på eininga.");
+    }
 }
 
 function getLocalDateString(date) {
@@ -84,20 +116,16 @@ function getWeekStart(date) {
     return result;
 }
 
-function isDateInCurrentWeek(dateString) {
-    const date = dateFromString(dateString);
-    const start = getWeekStart(new Date());
-    const end = new Date(start);
-
-    end.setDate(end.getDate() + 7);
-
-    return date >= start && date < end;
+function getWeekKey(dateString) {
+    return getLocalDateString(getWeekStart(dateFromString(dateString)));
 }
 
+function getDaysSince(dateString) {
+    const today = dateFromString(getLocalDateString(new Date()));
+    const date = dateFromString(dateString);
 
-// ======================================
-// FORMATERING
-// ======================================
+    return Math.floor((today - date) / 86400000);
+}
 
 function formatDistance(distance) {
     return Number(distance).toLocaleString("nn-NO", {
@@ -110,44 +138,57 @@ function formatPace(minutesPerKm) {
         return "–";
     }
 
-    const minutes = Math.floor(minutesPerKm);
-    const seconds = Math.round((minutesPerKm - minutes) * 60);
-
-    if (seconds === 60) {
-        return `${minutes + 1}:00`;
-    }
+    const totalSeconds = Math.round(minutesPerKm * 60);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
 
     return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
 
 function formatDuration(milliseconds) {
     const totalSeconds = Math.floor(milliseconds / 1000);
-    const minutes = Math.floor(totalSeconds / 60);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
     const seconds = totalSeconds % 60;
-    const hours = Math.floor(minutes / 60);
-    const remainingMinutes = minutes % 60;
 
     if (hours > 0) {
-        return `${String(hours).padStart(2, "0")}:${String(remainingMinutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+        return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
     }
 
     return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
 function getRunPace(run) {
-    const minutes = run.elapsedMs / 60000;
-    return minutes / run.distance;
+    return (run.durationMs / 60000) / run.distance;
 }
 
 function getRunSpeed(run) {
-    const hours = run.elapsedMs / 3600000;
-    return run.distance / hours;
+    return run.distance / (run.durationMs / 3600000);
+}
+
+function getLatestRun() {
+    if (runs.length === 0) return null;
+
+    return [...runs].sort((a, b) => {
+        return b.date.localeCompare(a.date);
+    })[0];
+}
+
+function getRunsThisWeek() {
+    const start = getWeekStart(new Date());
+    const end = new Date(start);
+    end.setDate(end.getDate() + 7);
+
+    return runs.filter(run => {
+        const date = dateFromString(run.date);
+        return date >= start && date < end;
+    });
 }
 
 
-// ======================================
-// NAVIGERING
-// ======================================
+// =====================================
+// NAVIGASJON
+// =====================================
 
 function openPage(pageId) {
     document.querySelectorAll(".page").forEach(page => {
@@ -177,9 +218,9 @@ document.querySelectorAll("[data-open-page]").forEach(button => {
 });
 
 
-// ======================================
+// =====================================
 // MÅL OG INNSTILLINGAR
-// ======================================
+// =====================================
 
 function fillGoalForm() {
     document.getElementById("targetDistance").value = settings.targetDistance;
@@ -201,14 +242,18 @@ document.getElementById("goalForm").addEventListener("submit", event => {
     };
 
     if (
+        !Number.isFinite(newSettings.targetDistance) ||
         newSettings.targetDistance <= 0 ||
+        !Number.isFinite(newSettings.targetMinutes) ||
         newSettings.targetMinutes <= 0 ||
-        newSettings.goalWeeks <= 0 ||
-        newSettings.weeklyDistance < 0 ||
-        newSettings.runningDays < 1 ||
-        newSettings.runningDays > 7
+        !Number.isInteger(newSettings.goalWeeks) ||
+        newSettings.goalWeeks < 1 ||
+        newSettings.goalWeeks > 52 ||
+        !Number.isFinite(newSettings.weeklyDistance) ||
+        newSettings.weeklyDistance <= 0 ||
+        ![1, 2, 3].includes(newSettings.runningDays)
     ) {
-        alert("Kontroller at du har fylt inn gyldige tal.");
+        alert("Kontroller at du har fylt inn gyldige verdiar.");
         return;
     }
 
@@ -220,23 +265,29 @@ document.getElementById("goalForm").addEventListener("submit", event => {
 });
 
 
-// ======================================
+// =====================================
 // STOPPEKLOKKE
-// ======================================
+// =====================================
 
 const stopwatchDisplay = document.getElementById("stopwatch");
 const startButton = document.getElementById("startTimer");
 const pauseButton = document.getElementById("pauseTimer");
 const resetButton = document.getElementById("resetTimer");
 
-function updateStopwatchDisplay() {
-    let currentTime = elapsedMs;
+let elapsedMs = 0;
+let startedAt = null;
+let timerInterval = null;
 
-    if (startedAt !== null) {
-        currentTime += Date.now() - startedAt;
+function getCurrentElapsed() {
+    if (startedAt === null) {
+        return elapsedMs;
     }
 
-    stopwatchDisplay.textContent = formatDuration(currentTime);
+    return elapsedMs + (Date.now() - startedAt);
+}
+
+function updateStopwatchDisplay() {
+    stopwatchDisplay.textContent = formatDuration(getCurrentElapsed());
 }
 
 function startStopwatch() {
@@ -249,13 +300,16 @@ function startStopwatch() {
     startButton.disabled = true;
     pauseButton.disabled = false;
 
+    document.getElementById("timerStatus").textContent =
+        "Stoppeklokka går. Denne tida blir brukt når du lagrar løpeturen.";
+
     updateStopwatchDisplay();
 }
 
 function pauseStopwatch() {
     if (startedAt === null) return;
 
-    elapsedMs += Date.now() - startedAt;
+    elapsedMs = getCurrentElapsed();
     startedAt = null;
 
     clearInterval(timerInterval);
@@ -264,18 +318,30 @@ function pauseStopwatch() {
     startButton.disabled = false;
     pauseButton.disabled = true;
 
+    document.getElementById("timerStatus").textContent =
+        "Stoppeklokka er sett på pause. Du kan starte henne igjen.";
+
     updateStopwatchDisplay();
 }
 
 function resetStopwatch() {
-    pauseStopwatch();
+    if (startedAt !== null) {
+        pauseStopwatch();
+    }
 
     elapsedMs = 0;
+    startedAt = null;
 
-    updateStopwatchDisplay();
+    clearInterval(timerInterval);
+    timerInterval = null;
 
     startButton.disabled = false;
     pauseButton.disabled = true;
+
+    document.getElementById("timerStatus").textContent =
+        "Stoppeklokka er nullstilt.";
+
+    updateStopwatchDisplay();
 }
 
 startButton.addEventListener("click", startStopwatch);
@@ -283,22 +349,33 @@ pauseButton.addEventListener("click", pauseStopwatch);
 resetButton.addEventListener("click", resetStopwatch);
 
 
-// ======================================
+// =====================================
 // REGISTRERE LØPETUR
-// ======================================
+// =====================================
 
 document.getElementById("runDate").value = getLocalDateString(new Date());
 
 document.getElementById("runForm").addEventListener("submit", event => {
     event.preventDefault();
 
-    pauseStopwatch();
+    // Stoppar klokka dersom ho framleis går.
+    if (startedAt !== null) {
+        pauseStopwatch();
+    }
 
     const distance = Number(document.getElementById("runDistance").value);
     const date = document.getElementById("runDate").value;
     const feeling = document.getElementById("runFeeling").value;
 
-    if (!distance || distance <= 0) {
+    const manualMinutes = Number(
+        document.getElementById("manualMinutes").value || 0
+    );
+
+    const manualSeconds = Number(
+        document.getElementById("manualSeconds").value || 0
+    );
+
+    if (!Number.isFinite(distance) || distance <= 0 || distance > 500) {
         alert("Skriv inn ei gyldig distanse.");
         return;
     }
@@ -308,8 +385,35 @@ document.getElementById("runForm").addEventListener("submit", event => {
         return;
     }
 
-    if (elapsedMs <= 0) {
-        alert("Start stoppeklokka før du lagrar løpeturen.");
+    if (date > getLocalDateString(new Date())) {
+        alert("Datoen kan ikkje vere i framtida.");
+        return;
+    }
+
+    let durationMs;
+
+    // Stoppeklokka blir brukt dersom ho har vore starta.
+    if (elapsedMs > 0) {
+        durationMs = elapsedMs;
+    } else {
+        // Viss ikkje, brukar appen tida som er skriven inn manuelt.
+        if (
+            !Number.isInteger(manualMinutes) ||
+            !Number.isInteger(manualSeconds) ||
+            manualMinutes < 0 ||
+            manualMinutes > 999 ||
+            manualSeconds < 0 ||
+            manualSeconds > 59
+        ) {
+            alert("Skriv inn ei gyldig tid.");
+            return;
+        }
+
+        durationMs = (manualMinutes * 60 + manualSeconds) * 1000;
+    }
+
+    if (durationMs <= 0) {
+        alert("Start stoppeklokka eller skriv inn tida manuelt.");
         return;
     }
 
@@ -317,7 +421,7 @@ document.getElementById("runForm").addEventListener("submit", event => {
         id: createRunId(),
         date: date,
         distance: distance,
-        elapsedMs: elapsedMs,
+        durationMs: durationMs,
         feeling: feeling
     };
 
@@ -326,8 +430,7 @@ document.getElementById("runForm").addEventListener("submit", event => {
     saveData();
     resetStopwatch();
 
-    document.getElementById("runDistance").value = "";
-    document.getElementById("runFeeling").value = "easy";
+    document.getElementById("runForm").reset();
     document.getElementById("runDate").value = getLocalDateString(new Date());
 
     renderAll();
@@ -336,27 +439,21 @@ document.getElementById("runForm").addEventListener("submit", event => {
     alert("Løpeturen er lagra!");
 });
 
-function createRunId() {
-    if (window.crypto && window.crypto.randomUUID) {
-        return window.crypto.randomUUID();
-    }
 
-    return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-}
-
-
-// ======================================
-// STATISTIKK OG FRAMSIDE
-// ======================================
+// =====================================
+// FRAMSIDE OG STATISTIKK
+// =====================================
 
 function renderDashboard() {
     const totalDistance = runs.reduce((sum, run) => {
-        return sum + Number(run.distance);
+        return sum + run.distance;
     }, 0);
 
-    const weeklyDistance = runs
-        .filter(run => isDateInCurrentWeek(run.date))
-        .reduce((sum, run) => sum + Number(run.distance), 0);
+    const weekRuns = getRunsThisWeek();
+
+    const weeklyDistance = weekRuns.reduce((sum, run) => {
+        return sum + run.distance;
+    }, 0);
 
     const bestRun = runs.reduce((best, run) => {
         if (!best || getRunPace(run) < getRunPace(best)) {
@@ -367,30 +464,30 @@ function renderDashboard() {
     }, null);
 
     const longestRun = runs.reduce((longest, run) => {
-        return Math.max(longest, Number(run.distance));
+        return Math.max(longest, run.distance);
     }, 0);
 
     document.getElementById("weekDistance").textContent =
-        `${formatDistance(weeklyDistance)} km`;
-
-    document.getElementById("runCount").textContent = runs.length;
+        `${formatDistance(weeklyDistance)} / ${formatDistance(settings.weeklyDistance)} km`;
 
     document.getElementById("totalDistance").textContent =
         `${formatDistance(totalDistance)} km`;
 
+    document.getElementById("runCount").textContent = runs.length;
+
     document.getElementById("bestPace").textContent =
-        bestRun ? `${formatPace(getRunPace(bestRun))}` : "–";
+        bestRun ? formatPace(getRunPace(bestRun)) : "–";
 
     document.getElementById("goalTitle").textContent =
         `${formatDistance(settings.targetDistance)} km på ${formatDistance(settings.targetMinutes)} min`;
+
+    document.getElementById("progressDescription").textContent =
+        `Lengste tur: ${formatDistance(longestRun)} av ${formatDistance(settings.targetDistance)} km`;
 
     const progress = Math.min(
         100,
         (longestRun / settings.targetDistance) * 100
     );
-
-    document.getElementById("progressDescription").textContent =
-        `Lengste tur: ${formatDistance(longestRun)} av ${formatDistance(settings.targetDistance)} km`;
 
     document.getElementById("progressPercent").textContent =
         `${Math.round(progress)} %`;
@@ -398,137 +495,217 @@ function renderDashboard() {
     document.getElementById("progressBar").style.width =
         `${progress}%`;
 
-    const targetPace = settings.targetMinutes / settings.targetDistance;
-
     document.getElementById("goalPace").textContent =
-        `${formatPace(targetPace)} min/km`;
+        `${formatPace(settings.targetMinutes / settings.targetDistance)} min/km`;
 
     document.getElementById("weeksLeft").textContent =
         `${settings.goalWeeks} veker`;
+
+    const weekStart = getWeekStart(new Date());
+
+    document.getElementById("currentWeekLabel").textContent =
+        `Frå ${weekStart.getDate()}/${weekStart.getMonth() + 1}`;
 
     renderNextRun();
 }
 
 
-// ======================================
+// =====================================
 // NESTE LØPETUR
-// ======================================
-
-function getLatestRun() {
-    if (runs.length === 0) return null;
-
-    return [...runs].sort((a, b) => {
-        return b.date.localeCompare(a.date);
-    })[0];
-}
+// =====================================
 
 function renderNextRun() {
+    const title = document.getElementById("nextRunTitle");
     const text = document.getElementById("nextRunText");
+
     const latestRun = getLatestRun();
 
     if (!latestRun) {
+        title.textContent = "Start med ein roleg tur";
         text.textContent =
-            "Start med ein roleg tur. Når du har registrert han, kan RunGoal gi deg eit forslag til neste økt.";
+            "Når du har registrert den første løpeturen, kan RunGoal gi deg eit forslag til neste økt.";
         return;
     }
 
-    if (latestRun.feeling === "pain") {
+    const daysSince = getDaysSince(latestRun.date);
+
+    if (daysSince <= 7 && latestRun.feeling === "pain") {
+        title.textContent = "Ta ein pause";
         text.textContent =
-            "Du registrerte smerter på siste tur. Ta pause frå løping dersom du framleis har vondt. Snakk med ein føresett eller helsepersonell dersom smertene held fram.";
+            "Du registrerte smerter på siste tur. Ta pause frå løpinga dersom du framleis har vondt. Snakk med ein føresett eller helsepersonell dersom smertene held fram.";
         return;
     }
 
-    if (latestRun.feeling === "hard") {
+    if (daysSince <= 7 && latestRun.feeling === "hard") {
+        title.textContent = "Ta ei rolegare økt";
         text.textContent =
-            "Siste tur var tung. Neste tur kan vere kortare og rolegare. Ta ein ekstra kviledag dersom du treng det.";
+            "Siste tur var tung. Neste tur kan vere kortare og rolegare, eller du kan ta ein ekstra kviledag.";
         return;
     }
 
+    title.textContent = "Hald fram i ditt eige tempo";
     text.textContent =
-        "Hald fram med rolege løpeturar og ta kvile mellom øktene. Du treng ikkje auke farten kvar gong.";
+        "Planlegg neste tur med god tid til kvile. Du treng ikkje springe fortare kvar gong.";
 }
 
 
-// ======================================
-// TRENINGSPLAN
-// ======================================
+// =====================================
+// SMARTARE TRENINGSPLAN
+// =====================================
+
+function getSuggestedWeeklyDistance() {
+    const today = dateFromString(getLocalDateString(new Date()));
+    const fourWeeksAgo = new Date(today);
+
+    fourWeeksAgo.setDate(fourWeeksAgo.getDate() - 27);
+
+    const recentRuns = runs.filter(run => {
+        const date = dateFromString(run.date);
+        return date >= fourWeeksAgo && date <= today;
+    });
+
+    // Utan nyare registreringar brukar appen vekedistansen
+    // som brukaren sjølv har valt.
+    if (recentRuns.length === 0) {
+        return settings.weeklyDistance;
+    }
+
+    // Finn kor mange ulike veker brukaren har sprunge.
+    const activeWeeks = new Set(
+        recentRuns.map(run => getWeekKey(run.date))
+    );
+
+    const recentTotal = recentRuns.reduce((sum, run) => {
+        return sum + run.distance;
+    }, 0);
+
+    // Bruk gjennomsnittet av vekene med registrert løping.
+    const recentAverage = recentTotal / activeWeeks.size;
+
+    // Planforslaget skal ikkje automatisk auke mengda.
+    return Math.min(settings.weeklyDistance, recentAverage);
+}
 
 function renderPlan() {
+    const title = document.getElementById("planTitle");
     const summary = document.getElementById("planSummary");
     const sessions = document.getElementById("trainingSessions");
-    const latestRun = getLatestRun();
-
-    const days = Number(settings.runningDays);
-    const weeklyKm = Number(settings.weeklyDistance);
-
-    summary.textContent =
-        `Du har valt ${days} løpedag${days === 1 ? "" : "ar"} i veka og oppgitt ${formatDistance(weeklyKm)} km som vanleg vekesdistanse. Planen under er eit forslag, ikkje noko du må gjennomføre.`;
 
     sessions.innerHTML = "";
 
-    if (latestRun && latestRun.feeling === "pain") {
-        sessions.innerHTML = `
-            <div class="session-card">
-                <h3>Ta ein pause</h3>
-                <p>Du har registrert smerter på siste løpetur. Vent med neste løpetur dersom du framleis har vondt. Snakk med ein føresett eller helsepersonell dersom smertene held fram.</p>
-            </div>
+    const latestRun = getLatestRun();
+    const daysSince = latestRun ? getDaysSince(latestRun.date) : Infinity;
+
+    // Ved nyleg registrerte smerter blir løpeøktene sette på pause.
+    if (
+        latestRun &&
+        latestRun.feeling === "pain" &&
+        daysSince <= 7
+    ) {
+        title.textContent = "Ta ein pause frå løpinga";
+
+        summary.textContent =
+            "Du registrerte smerter på siste løpetur. Ikkje press deg vidare dersom du framleis har vondt.";
+
+        const pauseCard = document.createElement("div");
+        pauseCard.className = "session-card rest-card";
+        pauseCard.innerHTML = `
+            <h3>Ingen planlagde løpeturar akkurat no</h3>
+            <p>Vent med løping til det kjennest greitt å vere aktiv igjen. Snakk med ein føresett eller helsepersonell dersom smertene held fram.</p>
         `;
 
+        sessions.appendChild(pauseCard);
         return;
     }
 
-    const numberOfSessions = Math.min(days, 3);
+    let weeklyTarget = getSuggestedWeeklyDistance();
 
-    let suggestions = [];
+    // Ei tung økt gir eit meir forsiktig forslag.
+    const hadHardRun =
+        latestRun &&
+        latestRun.feeling === "hard" &&
+        daysSince <= 7;
 
-    if (numberOfSessions === 1) {
-        suggestions = [
-            ["Økt 1", "Ein roleg tur eller veksling mellom gange og jogging. Avslutt medan du framleis har litt overskot."]
-        ];
-    } else if (numberOfSessions === 2) {
-        suggestions = [
-            ["Økt 1", "Ein kort og roleg tur. Ta pausar med gange dersom du treng det."],
-            ["Økt 2", "Ein roleg tur som kan vere litt lengre enn den første, dersom kroppen kjennest bra."]
-        ];
+    if (hadHardRun) {
+        weeklyTarget *= 0.8;
+    }
+
+    const sessionCount = settings.runningDays;
+
+    const sessionDays = {
+        1: ["Onsdag"],
+        2: ["Tysdag", "Laurdag"],
+        3: ["Måndag", "Onsdag", "Laurdag"]
+    };
+
+    const portions = {
+        1: [1],
+        2: [0.45, 0.55],
+        3: [0.30, 0.30, 0.40]
+    };
+
+    const descriptions = {
+        1: "Ein roleg tur. Ta pausar med gange dersom du treng det.",
+        2: "Ein roleg tur med god tid til pausar.",
+        3: "Ein roleg tur. Hald eit tempo der du framleis kan snakke."
+    };
+
+    if (hadHardRun) {
+        title.textContent = "Ei litt lettare veke";
+        summary.textContent =
+            "Den siste turen din var tung. Difor foreslår RunGoal ei rolegare veke med litt mindre distanse.";
+    } else if (runs.length > 0) {
+        title.textContent = "Tilpassa planen din";
+        summary.textContent =
+            "Forslaget tek omsyn til løpeturane du har registrert dei siste fire vekene. Det aukar ikkje automatisk distansen etter ein god tur.";
     } else {
-        suggestions = [
-            ["Økt 1", "Ein kort og roleg tur."],
-            ["Økt 2", "Ein roleg tur med god tid til pausar."],
-            ["Økt 3", "Ein behageleg tur. Hald eit tempo der du framleis kan snakke."]
-        ];
+        title.textContent = "Din første veke";
+        summary.textContent =
+            "Dette er eit forsiktig startforslag basert på vekedistansen du har valt.";
     }
 
-    if (latestRun && latestRun.feeling === "hard") {
-        suggestions = suggestions.map(([title]) => [
-            title,
-            "Gjer økta kort og roleg, eller ta ein ekstra kviledag dersom du treng det."
-        ]);
-    }
+    for (let i = 0; i < sessionCount; i++) {
+        const distance = weeklyTarget * portions[sessionCount][i];
 
-    suggestions.forEach(([title, description], index) => {
-        const card = document.createElement("div");
+        const card = document.createElement("article");
         card.className = "session-card";
 
-        card.innerHTML = `
-            <h3><span class="session-number">${index + 1}</span>${title}</h3>
-            <p>${description}</p>
-        `;
+        const heading = document.createElement("h3");
+        heading.innerHTML =
+            `<span class="session-number">${i + 1}</span>${sessionDays[sessionCount][i]}`;
+
+        const distanceText = document.createElement("p");
+        distanceText.textContent =
+            `Forslag: omtrent ${formatDistance(distance)} km.`;
+
+        const description = document.createElement("p");
+
+        if (hadHardRun) {
+            description.textContent =
+                "Hald økta kort og roleg, eller vel ein ekstra kviledag dersom du treng det.";
+        } else {
+            description.textContent = descriptions[sessionCount];
+        }
+
+        card.appendChild(heading);
+        card.appendChild(distanceText);
+        card.appendChild(description);
 
         sessions.appendChild(card);
-    });
-
-    if (latestRun && latestRun.feeling !== "hard") {
-        const note = document.createElement("p");
-        note.className = "empty-message";
-        note.textContent = "Legg inn kviledagar mellom løpeturane. Du kan justere planen under «Målet mitt».";
-        sessions.appendChild(note);
     }
+
+    const restNote = document.createElement("p");
+    restNote.className = "empty-message";
+    restNote.textContent =
+        "Legg inn kviledagar mellom øktene. Dette er eit forslag, og du kan korte ned eller droppe ei økt når du treng det.";
+
+    sessions.appendChild(restNote);
 }
 
 
-// ======================================
-// GRAF OVER DEI SISTE SEKS VEKENE
-// ======================================
+// =====================================
+// GRAF - SEKS SISTE VEKER
+// =====================================
 
 function renderWeeklyChart() {
     const chart = document.getElementById("weeklyChart");
@@ -549,7 +726,7 @@ function renderWeeklyChart() {
                 const date = dateFromString(run.date);
                 return date >= start && date < end;
             })
-            .reduce((sum, run) => sum + Number(run.distance), 0);
+            .reduce((sum, run) => sum + run.distance, 0);
 
         weeks.push({
             label: `${start.getDate()}/${start.getMonth() + 1}`,
@@ -583,18 +760,23 @@ function renderWeeklyChart() {
 }
 
 
-// ======================================
+// =====================================
 // KALENDER
-// ======================================
+// =====================================
+
+let calendarMonth = new Date();
+calendarMonth.setDate(1);
+
+let selectedDate = getLocalDateString(new Date());
 
 function renderCalendar() {
-    const monthTitle = document.getElementById("calendarMonth");
+    const title = document.getElementById("calendarMonth");
     const grid = document.getElementById("calendarGrid");
 
     const year = calendarMonth.getFullYear();
     const month = calendarMonth.getMonth();
 
-    monthTitle.textContent = calendarMonth.toLocaleDateString("nn-NO", {
+    title.textContent = calendarMonth.toLocaleDateString("nn-NO", {
         month: "long",
         year: "numeric"
     });
@@ -622,7 +804,9 @@ function renderCalendar() {
     }
 
     for (let day = 1; day <= numberOfDays; day++) {
-        const dateString = getLocalDateString(new Date(year, month, day));
+        const dateString = getLocalDateString(
+            new Date(year, month, day)
+        );
 
         const hasRun = runs.some(run => run.date === dateString);
 
@@ -669,7 +853,8 @@ function renderSelectedDay() {
     const dayRuns = runs.filter(run => run.date === selectedDate);
 
     if (dayRuns.length === 0) {
-        container.innerHTML = `<p class="empty-message">Ingen registrerte løpeturar denne dagen.</p>`;
+        container.innerHTML =
+            `<p class="empty-message">Ingen registrerte løpeturar denne dagen.</p>`;
         return;
     }
 
@@ -680,7 +865,7 @@ function renderSelectedDay() {
         item.innerHTML = `
             <div>
                 <strong>${formatDistance(run.distance)} km</strong>
-                <p>${formatDuration(run.elapsedMs)} · ${feelingLabels[run.feeling]}</p>
+                <p>${formatDuration(run.durationMs)} · ${FEELING_LABELS[run.feeling] || "Ikkje oppgitt"}</p>
             </div>
             <div>
                 <strong>${formatPace(getRunPace(run))}</strong>
@@ -693,16 +878,17 @@ function renderSelectedDay() {
 }
 
 
-// ======================================
-// ALLE LØPETURANE
-// ======================================
+// =====================================
+// HISTORIKK
+// =====================================
 
 function renderHistory() {
     const history = document.getElementById("runHistory");
     history.innerHTML = "";
 
     if (runs.length === 0) {
-        history.innerHTML = `<p class="empty-message">Du har ikkje registrert nokon løpeturar enno.</p>`;
+        history.innerHTML =
+            `<p class="empty-message">Du har ikkje registrert nokon løpeturar enno.</p>`;
         return;
     }
 
@@ -717,14 +903,16 @@ function renderHistory() {
         item.innerHTML = `
             <div>
                 <strong>${formatDistance(run.distance)} km</strong>
-                <p>${formatDate(run.date)} · ${formatDuration(run.elapsedMs)}</p>
-                <p>${feelingLabels[run.feeling] || "Ikkje oppgitt"}</p>
+                <p>${formatDate(run.date)} · ${formatDuration(run.durationMs)}</p>
+                <p>${FEELING_LABELS[run.feeling] || "Ikkje oppgitt"}</p>
             </div>
 
             <div>
                 <strong>${formatPace(getRunPace(run))}</strong>
                 <p>min/km</p>
-                <button class="delete-run" data-delete="${run.id}" type="button">Slett</button>
+                <button class="delete-run" data-delete="${run.id}" type="button">
+                    Slett
+                </button>
             </div>
         `;
 
@@ -739,9 +927,9 @@ document.getElementById("runHistory").addEventListener("click", event => {
 
     const runId = button.dataset.delete;
 
-    const confirmed = confirm("Vil du slette denne løpeturen?");
-
-    if (!confirmed) return;
+    if (!confirm("Vil du slette denne løpeturen?")) {
+        return;
+    }
 
     runs = runs.filter(run => String(run.id) !== String(runId));
 
@@ -750,9 +938,9 @@ document.getElementById("runHistory").addEventListener("click", event => {
 });
 
 
-// ======================================
-// EKSPORTERE DATA
-// ======================================
+// =====================================
+// EKSPORT AV TRENINGSDATA
+// =====================================
 
 document.getElementById("exportData").addEventListener("click", () => {
     const backup = {
@@ -781,9 +969,9 @@ document.getElementById("exportData").addEventListener("click", () => {
 });
 
 
-// ======================================
+// =====================================
 // OPPDATERE HEILE APPEN
-// ======================================
+// =====================================
 
 function renderAll() {
     renderDashboard();
@@ -795,18 +983,18 @@ function renderAll() {
 }
 
 
-// ======================================
+// =====================================
 // STARTE APPEN
-// ======================================
+// =====================================
 
 fillGoalForm();
 renderAll();
 updateStopwatchDisplay();
 
 
-// ======================================
+// =====================================
 // PWA - SERVICE WORKER
-// ======================================
+// =====================================
 
 if ("serviceWorker" in navigator) {
     window.addEventListener("load", () => {
